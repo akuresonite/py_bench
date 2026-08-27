@@ -15,6 +15,14 @@ def _standard_keys(sweep: Sweep) -> list[str]:
     return [
         item["key"] for item in sweep.interpreters
         if item.get("available") and not item.get("freethreaded")
+        and item.get("reference", True)
+    ]
+
+
+def _alternative_keys(sweep: Sweep) -> list[str]:
+    return [
+        item["key"] for item in sweep.interpreters
+        if item.get("available") and not item.get("reference", True)
     ]
 
 
@@ -22,6 +30,8 @@ def _freethreaded_pairs(sweep: Sweep) -> list[tuple[str, str]]:
     pairs = []
     for item in sweep.interpreters:
         if not item.get("available") or not item.get("freethreaded"):
+            continue
+        if not item.get("reference", True):
             continue
         twin = sweep.interpreter(item["minor"])
         if twin and twin.get("available"):
@@ -53,6 +63,7 @@ def render(sweep: Sweep, baseline: str | None = None) -> str:
     out.extend(_interpreter_section(sweep))
     out.extend(_summary_section(sweep, keys, baseline))
     out.extend(_matrix_section(sweep, keys, baseline))
+    out.extend(_alternatives_section(sweep, baseline))
     out.extend(_freethreading_section(sweep))
     out.extend(_thread_scaling_section(sweep))
     out.extend(_caveats_section(sweep))
@@ -177,6 +188,52 @@ def _matrix_section(sweep: Sweep, keys: list[str], baseline: str) -> list[str]:
                         ratio, "\\*" if cell.status == STATUS_DEGRADED else ""))
             lines.append(_row(cells))
         lines.append("")
+    return lines
+
+
+def _alternatives_section(sweep: Sweep, baseline: str) -> list[str]:
+    keys = _alternative_keys(sweep)
+    if not keys:
+        return []
+    lines = ["## Other implementations", ""]
+    lines.append("These are separate Python implementations, not CPython builds, so "
+                 "they are reported apart from the version ladder. A dash means the "
+                 "benchmark could not run there at all.")
+    lines.append("")
+    for key in keys:
+        entry = sweep.interpreter(key) or {}
+        probe = entry.get("probe") or {}
+        lines.append("- `%s` — %s %s, targeting Python %s" % (
+            key, probe.get("implementation", "?"),
+            probe.get("version_display") or probe.get("version", "?"),
+            entry.get("minor") or "?"))
+    lines.append("")
+    header = ["Benchmark", baseline]
+    for key in keys:
+        header += [key, "%s vs %s" % (key, baseline)]
+    lines.append(_row(header))
+    lines.append(_row(["---"] * len(header)))
+    for group in sweep.groups:
+        for benchmark in sweep.benchmark_ids(group):
+            base_cell = sweep.cell(benchmark, baseline)
+            cells = ["`%s`" % benchmark, format_duration(base_cell.median_ns)]
+            for key in keys:
+                cell = sweep.cell(benchmark, key)
+                if not cell.ok:
+                    cells += ["—", "—"]
+                    continue
+                ratio = speedup(base_cell, cell)
+                cells += [format_duration(cell.median_ns),
+                          "%.3gx" % ratio if ratio else "—"]
+            lines.append(_row(cells))
+    lines.append("")
+    overall = ["**geometric mean**", ""]
+    for key in keys:
+        ratios = [speedup(sweep.cell(b, baseline), sweep.cell(b, key))
+                  for b in sweep.benchmark_ids()]
+        mean = geometric_mean([value for value in ratios if value])
+        overall += ["", "**%.3gx**" % mean if mean else "—"]
+    lines.insert(len(lines) - 1, _row(overall))
     return lines
 
 

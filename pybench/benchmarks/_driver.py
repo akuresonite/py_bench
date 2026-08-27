@@ -17,15 +17,47 @@ import gc
 import importlib.util
 import json
 import os
-import statistics
 import sys
-import sysconfig
 import time
+
+try:
+    import sysconfig
+except ImportError:  # not every Python implementation ships sysconfig
+    sysconfig = None
 
 BENCH_DIR = os.path.dirname(os.path.abspath(__file__))
 BENCH_PREFIX = "bench_"
 SETUP_PREFIX = "setup_"
 MAX_LOOPS = 1 << 30
+
+
+def _config_var(name):
+    """sysconfig lookup that tolerates implementations without it."""
+    if sysconfig is None:
+        return None
+    try:
+        return sysconfig.get_config_var(name)
+    except Exception:
+        return None
+
+
+def _median(values):
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2.0
+
+
+def _mean(values):
+    return sum(values) / len(values)
+
+
+def _pstdev(values):
+    if len(values) < 2:
+        return 0.0
+    mean = _mean(values)
+    return (sum((value - mean) ** 2 for value in values) / len(values)) ** 0.5
 
 
 def _module_files():
@@ -83,7 +115,7 @@ def probe():
     }
 
     # Free-threaded builds set Py_GIL_DISABLED at configure time.
-    info["freethreaded_build"] = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+    info["freethreaded_build"] = bool(_config_var("Py_GIL_DISABLED"))
     gil_enabled = None
     is_gil_enabled = getattr(sys, "_is_gil_enabled", None)
     if is_gil_enabled is not None:
@@ -112,7 +144,7 @@ def probe():
             jit["built"] = False
     else:
         cflags = " ".join(
-            str(sysconfig.get_config_var(var) or "")
+            str(_config_var(var) or "")
             for var in ("PY_CORE_CFLAGS", "CONFIGURE_ARGS", "PY_CFLAGS_NODIST")
         )
         jit["source"] = "sysconfig"
@@ -120,10 +152,11 @@ def probe():
         jit["available"] = jit["built"]
     info["jit"] = jit
 
+    core_cflags = str(_config_var("PY_CORE_CFLAGS") or "")
     info["config"] = {
-        "PGO": bool((sysconfig.get_config_var("PY_CORE_CFLAGS") or "").find("-fprofile-use") >= 0),
-        "LTO": bool((sysconfig.get_config_var("PY_CORE_CFLAGS") or "").find("-flto") >= 0),
-        "CC": sysconfig.get_config_var("CC"),
+        "PGO": "-fprofile-use" in core_cflags,
+        "LTO": "-flto" in core_cflags,
+        "CC": _config_var("CC"),
     }
     return info
 
@@ -182,10 +215,10 @@ def measure(bench_id, min_time_ms, warmup, rounds):
         "loops": loops,
         "values_ns": values,
         "per_op_ns": per_op,
-        "median_ns": statistics.median(per_op),
+        "median_ns": _median(per_op),
         "min_ns": min(per_op),
-        "mean_ns": statistics.fmean(per_op),
-        "stddev_ns": statistics.pstdev(per_op) if len(per_op) > 1 else 0.0,
+        "mean_ns": _mean(per_op),
+        "stddev_ns": _pstdev(per_op),
     }
 
 

@@ -179,3 +179,50 @@ def test_markdown_handles_a_sweep_with_no_interpreters():
     for item in sweep.interpreters:
         item["available"] = False
     assert "No available interpreters" in markdown_report.render(sweep)
+
+
+def build_sweep_with_alternative():
+    sweep = build_sweep()
+    sweep.interpreters.append({
+        "key": "rustpython", "minor": "3.13", "freethreaded": False,
+        "prerelease": False, "available": True, "source": "path",
+        "implementation": "rustpython", "reference": False,
+        "probe": {"version": "3.13.0", "version_display": "3.13.0",
+                  "implementation": "rustpython", "gil_enabled": True,
+                  "jit": {"built": False}},
+    })
+    sweep.measurements.append(Measurement(
+        interpreter="rustpython", benchmark="call_simple", group="micro",
+        loops=10, values_ns=[40000.0], per_op_ns=[4000.0], median_ns=4000.0,
+        min_ns=4000.0, mean_ns=4000.0, stddev_ns=0.0, status=STATUS_OK,
+    ))
+    sweep.measurements.append(Measurement(
+        interpreter="rustpython", benchmark="threads_parallel", group="threaded",
+        status=STATUS_ERROR, note="ModuleNotFoundError: threading",
+    ))
+    return sweep
+
+
+def test_alternative_is_excluded_from_the_version_ladder():
+    output = render_table(build_sweep_with_alternative())
+    ladder = output.split("other implementations")[0]
+    assert "rustpython" not in ladder
+
+
+def test_alternative_gets_its_own_section_with_absolute_times():
+    output = render_table(build_sweep_with_alternative())
+    assert "other implementations" in output
+    assert "4.00 us" in output          # absolute time
+    assert "0.05x" in output            # 200ns baseline / 4000ns
+
+
+def test_alternative_failure_reads_as_a_dash_not_a_missing_benchmark():
+    output = render_table(build_sweep_with_alternative())
+    assert "could not run on an alternative implementation" in output
+
+
+def test_markdown_reports_alternatives_separately():
+    text = markdown_report.render(build_sweep_with_alternative())
+    assert "## Other implementations" in text
+    assert "rustpython" in text
+    assert "targeting Python 3.13" in text

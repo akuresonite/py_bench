@@ -21,9 +21,33 @@ REPORTS_DIR = os.path.join(ROOT, "reports")
 
 def _matrix_from_args(args: argparse.Namespace) -> list[interpreters.Interpreter]:
     minors = [item.strip() for item in args.minors.split(",")] if args.minors else None
-    return interpreters.matrix(
+    entries = interpreters.matrix(
         minors=minors, include_freethreaded=not args.no_freethreaded
     )
+    return entries + _extras_from_args(args)
+
+
+def _extras_from_args(args: argparse.Namespace) -> list[interpreters.Interpreter]:
+    """Alternative implementations and hand-supplied interpreter binaries."""
+    extras: list[interpreters.Interpreter] = []
+    for spec in getattr(args, "extra", None) or []:
+        try:
+            extras.append(interpreters.parse_extra(spec))
+        except ValueError as exc:
+            sys.stderr.write("ignoring --extra %r: %s\n" % (spec, exc))
+    requested = getattr(args, "with_rustpython", None)
+    if requested is not None:
+        found = interpreters.find_rustpython(requested or None)
+        if found is None:
+            sys.stderr.write(
+                "rustpython not found. Build it with:\n"
+                "  cargo install --git https://github.com/RustPython/RustPython "
+                "--locked rustpython\n"
+                "or pass the binary explicitly: --with-rustpython /path/to/rustpython\n"
+            )
+        else:
+            extras.append(found)
+    return extras
 
 
 def _require_uv() -> bool:
@@ -69,7 +93,7 @@ def command_install(args: argparse.Namespace) -> int:
     if not interpreters.uv_available():
         _require_uv()
         return 1
-    entries = _matrix_from_args(args)
+    entries = [entry for entry in _matrix_from_args(args) if entry.source != "path"]
     print("Installing %d interpreter(s) via uv. First run downloads ~2 GiB.\n"
           % len(entries))
     resolved = interpreters.install(entries, reinstall=args.reinstall)
@@ -192,6 +216,19 @@ def build_parser() -> argparse.ArgumentParser:
             help="skip the free-threaded (no-GIL) builds",
         )
 
+    def add_extra_options(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--extra", action="append", metavar="KEY=PATH",
+            help="benchmark an interpreter binary directly, e.g. "
+                 "--extra pypy=/usr/bin/pypy3; repeatable. These never define the "
+                 "benchmark catalogue, so one that cannot run a benchmark leaves a "
+                 "dash rather than removing it for everyone",
+        )
+        target.add_argument(
+            "--with-rustpython", nargs="?", const="", metavar="PATH",
+            help="include RustPython, found on PATH or at the given path",
+        )
+
     doctor = sub.add_parser("doctor", help="check whether this machine is fit to benchmark")
     doctor.set_defaults(func=command_doctor)
 
@@ -203,12 +240,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     listing = sub.add_parser("list", help="show the resolved matrix and benchmark catalogue")
     add_matrix_options(listing)
+    add_extra_options(listing)
     listing.add_argument("--allow-system", action="store_true",
                          help="fall back to interpreters already on PATH")
     listing.set_defaults(func=command_list)
 
     run = sub.add_parser("run", help="execute a sweep")
     add_matrix_options(run)
+    add_extra_options(run)
     run.add_argument("--allow-system", action="store_true",
                      help="fall back to interpreters already on PATH (marks the sweep "
                           "mixed-source)")

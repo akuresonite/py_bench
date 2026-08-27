@@ -89,15 +89,18 @@ def _child_env(config: RunConfig) -> dict[str, str]:
 def build_catalogue(
     entries: list[Interpreter], config: RunConfig
 ) -> list[dict[str, Any]]:
-    """The benchmark list, intersected across every available interpreter.
+    """The benchmark list, intersected across the *reference* interpreters.
 
-    A benchmark that fails to import somewhere is dropped from the sweep rather
-    than producing a table with silent holes in it.
+    A benchmark that fails to import on every CPython build is dropped rather than
+    leaving silent holes in the table. Alternative implementations do not get a vote:
+    if RustPython cannot run a benchmark, that cell fails and reads as a dash, but the
+    benchmark stays in the comparison for everyone else.
     """
     from .interpreters import catalogue as read_catalogue
 
+    voters = [entry for entry in entries if entry.reference] or entries
     per_interpreter: list[dict[str, dict[str, Any]]] = []
-    for entry in entries:
+    for entry in voters:
         if not entry.available or entry.path is None:
             continue
         found = read_catalogue(entry.path)

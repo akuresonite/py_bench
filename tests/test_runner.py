@@ -143,3 +143,37 @@ def test_installed_python_parsing_survives_paths_with_spaces(monkeypatch):
     assert by_path["/home/a b/uv/python/3.14t/bin/python3.14t"].freethreaded
     assert by_path["/home/a b/uv/python/cpython-3.10/bin/python3.10"].managed
     assert not by_path["C:\\Users\\John Doe\\uv\\python313\\python.exe"].managed
+
+
+def test_alternative_implementations_do_not_shrink_the_catalogue(monkeypatch):
+    """RustPython failing a benchmark must not delete it for the CPython builds."""
+    catalogues = {
+        "/cpy310": [CATALOGUE[0], CATALOGUE[1]],
+        "/cpy313": [CATALOGUE[0], CATALOGUE[1]],
+        "/rustpython": [CATALOGUE[0]],          # cannot import the mini benchmark
+    }
+    monkeypatch.setattr(
+        "pybench.interpreters.catalogue", lambda path: catalogues[path]
+    )
+    entries = [
+        Interpreter(key="3.10", minor="3.10", request="3.10", path="/cpy310",
+                    available=True),
+        Interpreter(key="3.13", minor="3.13", request="3.13", path="/cpy313",
+                    available=True),
+        Interpreter(key="rustpython", minor="3.13", request="/rustpython",
+                    path="/rustpython", available=True, source="path",
+                    implementation="rustpython", reference=False),
+    ]
+    ids = [item["id"] for item in build_catalogue(entries, RunConfig())]
+    assert "nbody" in ids, "an alternative implementation must not get a vote"
+    assert "call_simple" in ids
+
+
+def test_catalogue_falls_back_to_all_when_nothing_is_a_reference(monkeypatch):
+    monkeypatch.setattr("pybench.interpreters.catalogue", lambda path: [CATALOGUE[0]])
+    entries = [
+        Interpreter(key="rustpython", minor="3.13", request="/r", path="/r",
+                    available=True, source="path", reference=False)
+    ]
+    assert [item["id"] for item in build_catalogue(entries, RunConfig())
+            if item["group"] != "startup"] == ["call_simple"]

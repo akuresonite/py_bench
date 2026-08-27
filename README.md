@@ -58,6 +58,32 @@ Useful `run` flags: `--repeats N` (repeat the whole matrix and aggregate),
 `--pin 2,3` (pin to specific cores on Linux), `--baseline 3.12`,
 `--min-time-ms`, `--warmup`, `--rounds`, `--allow-system`.
 
+## Other Python implementations
+
+CPython is not the only implementation, and the same benchmarks run against others:
+
+```bash
+uv run pybench run --with-rustpython              # RustPython, from PATH or ~/.cargo/bin
+uv run pybench run --extra pypy=/usr/bin/pypy3    # any interpreter binary; repeatable
+```
+
+Build RustPython first if you do not have it:
+
+```bash
+cargo install --git https://github.com/RustPython/RustPython --locked rustpython
+```
+
+These are reported in their own **Other implementations** section rather than mixed
+into the CPython version ladder, because a different implementation is not a different
+version.
+
+They also do not get a vote on which benchmarks run. The benchmark catalogue is the
+set every *reference* (CPython) build can execute; an alternative implementation that
+cannot run a benchmark leaves a dash in its own column and changes nothing for anyone
+else. Without that rule, adding one incomplete implementation would silently delete
+benchmarks from the entire comparison — which is precisely the failure mode you would
+never notice in the output.
+
 ## What it measures
 
 | Group | Count | Contents |

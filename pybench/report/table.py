@@ -54,6 +54,14 @@ def _standard_keys(sweep: Sweep) -> list[str]:
     return [
         item["key"] for item in sweep.interpreters
         if item.get("available") and not item.get("freethreaded")
+        and item.get("reference", True)
+    ]
+
+
+def _alternative_keys(sweep: Sweep) -> list[str]:
+    return [
+        item["key"] for item in sweep.interpreters
+        if item.get("available") and not item.get("reference", True)
     ]
 
 
@@ -61,6 +69,8 @@ def _freethreaded_pairs(sweep: Sweep) -> list[tuple[str, str]]:
     pairs = []
     for item in sweep.interpreters:
         if not item.get("available") or not item.get("freethreaded"):
+            continue
+        if not item.get("reference", True):
             continue
         twin = item["minor"]
         twin_entry = sweep.interpreter(twin)
@@ -85,6 +95,7 @@ def render(
 
     _header(sweep, paint, stream)
     _matrix(sweep, keys, baseline, paint, stream)
+    _alternatives(sweep, baseline, paint, stream)
     _freethreading(sweep, paint, stream)
     _summary(sweep, keys, baseline, paint, stream)
     _footnotes(sweep, paint, stream)
@@ -146,6 +157,58 @@ def _matrix(sweep: Sweep, keys: list[str], baseline: str, paint: Painter, stream
                         text += "*"
                     row += " %s" % paint.ratio("%8s" % text, ratio)
             stream.write(row + "\n")
+
+
+def _alternatives(sweep: Sweep, baseline: str, paint: Painter, stream) -> None:
+    """Other Python implementations, kept out of the CPython version ladder."""
+    keys = _alternative_keys(sweep)
+    if not keys:
+        return
+    stream.write("\n%s\n" % paint("other implementations", BOLD))
+    for key in keys:
+        entry = sweep.interpreter(key) or {}
+        probe = entry.get("probe") or {}
+        stream.write(paint("  %s — %s %s, targeting Python %s\n" % (
+            key, probe.get("implementation", "?"),
+            probe.get("version_display") or probe.get("version", "?"),
+            entry.get("minor") or "?"), DIM))
+    stream.write(paint("  times are absolute; ratios compare against %s\n" % baseline, DIM))
+
+    name_width = max([len(item) for item in sweep.benchmark_ids()] + [20]) + 1
+    head = "%-*s" % (name_width, "benchmark")
+    for key in keys:
+        head += " %12s %8s" % (key, "vs " + baseline)
+    stream.write(paint(head, BOLD) + "\n")
+
+    for group in sweep.groups:
+        ids = sweep.benchmark_ids(group)
+        if not ids:
+            continue
+        stream.write(paint("\n  %s\n" % group, BOLD))
+        for benchmark in ids:
+            base_cell = sweep.cell(benchmark, baseline)
+            row = "%-*s" % (name_width, benchmark)
+            for key in keys:
+                cell = sweep.cell(benchmark, key)
+                if not cell.ok:
+                    row += " %12s %8s" % (paint("—", DIM), paint("—", DIM))
+                    continue
+                ratio = speedup(base_cell, cell)
+                row += " %12s" % format_duration(cell.median_ns)
+                if ratio is None:
+                    row += " %8s" % paint("—", DIM)
+                else:
+                    row += " %s" % paint.ratio("%8s" % ("%.3gx" % ratio), ratio)
+            stream.write(row + "\n")
+
+    failed = {
+        benchmark for benchmark in sweep.benchmark_ids()
+        for key in keys if not sweep.cell(benchmark, key).ok
+    }
+    if failed:
+        stream.write(paint(
+            "\n  %d benchmark(s) could not run on an alternative implementation "
+            "and read as '—'.\n" % len(failed), DIM))
 
 
 def _freethreading(sweep: Sweep, paint: Painter, stream) -> None:

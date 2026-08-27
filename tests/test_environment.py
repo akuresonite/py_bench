@@ -82,3 +82,28 @@ def test_checks_return_known_statuses():
 def test_pin_command_is_empty_without_a_request():
     assert environment.pin_command(None) == []
     assert environment.pin_command("") == []
+
+
+def test_parse_extra_accepts_key_and_path():
+    from pybench.interpreters import parse_extra
+
+    entry = parse_extra("pypy=/usr/bin/pypy3")
+    assert entry.key == "pypy"
+    assert entry.path == "/usr/bin/pypy3"
+    assert entry.reference is False
+    assert entry.source == "path"
+
+
+def test_parse_extra_derives_a_key_from_a_bare_path():
+    from pybench.interpreters import parse_extra
+
+    assert parse_extra("/opt/bin/rustpython").key == "rustpython"
+
+
+def test_parse_extra_rejects_an_empty_value():
+    import pytest as _pytest
+
+    from pybench.interpreters import parse_extra
+
+    with _pytest.raises(ValueError):
+        parse_extra("key=")

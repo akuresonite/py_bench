@@ -39,7 +39,12 @@ class Interpreter:
     request: str                # what uv was asked for
     freethreaded: bool = False
     path: str | None = None
-    source: str = "uv"          # "uv" | "system"
+    source: str = "uv"          # "uv" | "system" | "path"
+    implementation: str = "cpython"
+    #: Reference interpreters define the benchmark catalogue. An alternative
+    #: implementation that cannot run a benchmark records a failure for that cell
+    #: instead of removing the benchmark from everyone else's comparison.
+    reference: bool = True
     available: bool = False
     reason: str | None = None
     probe: dict[str, Any] = field(default_factory=dict)
@@ -55,6 +60,8 @@ class Interpreter:
             "request": self.request,
             "freethreaded": self.freethreaded,
             "prerelease": self.prerelease,
+            "implementation": self.implementation,
+            "reference": self.reference,
             "path": self.path,
             "source": self.source,
             "available": self.available,
@@ -84,6 +91,47 @@ def matrix(
                     )
                 )
     return entries
+
+
+def extra_interpreter(key: str, path: str) -> Interpreter:
+    """An interpreter supplied by path rather than resolved through uv.
+
+    Used for alternative implementations (RustPython, PyPy, GraalPy) and for
+    locally built CPythons. These are never reference interpreters.
+    """
+    return Interpreter(
+        key=key,
+        minor="",
+        request=path,
+        path=path,
+        source="path",
+        implementation="unknown",
+        reference=False,
+    )
+
+
+def parse_extra(spec: str) -> Interpreter:
+    """Parse a ``KEY=PATH`` (or bare ``PATH``) command line value."""
+    key, separator, path = spec.partition("=")
+    if not separator:
+        path = key
+        key = os.path.splitext(os.path.basename(path))[0]
+    key, path = key.strip(), path.strip()
+    if not path:
+        raise ValueError("expected KEY=PATH, got %r" % spec)
+    resolved = shutil.which(path) or path
+    return extra_interpreter(key, resolved)
+
+
+def find_rustpython(path: str | None = None) -> Interpreter | None:
+    """Locate a RustPython binary, on PATH or where cargo installs it."""
+    candidates = [path] if path else []
+    candidates.append(shutil.which("rustpython"))
+    candidates.append(os.path.expanduser("~/.cargo/bin/rustpython"))
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return extra_interpreter("rustpython", candidate)
+    return None
 
 
 def uv_available() -> bool:
@@ -141,6 +189,9 @@ def resolve(
     """Locate each interpreter on disk and probe it. Never raises."""
     catalogue_of_installed = installed_pythons() if uv_available() else []
     for entry in entries:
+        if entry.source == "path":
+            _resolve_by_path(entry)
+            continue
         path = _match_installed(entry, catalogue_of_installed)
         if path is None and uv_available():
             path = _find_uv(entry.request)
@@ -219,6 +270,25 @@ def installed_pythons() -> list[_Installed]:
             managed=bool(managed_root and path.startswith(managed_root)),
         ))
     return found
+
+
+def _resolve_by_path(entry: Interpreter) -> None:
+    """Probe an interpreter given directly by path, whatever implementation it is."""
+    if not entry.path or not os.path.exists(entry.path):
+        entry.available = False
+        entry.reason = "no such interpreter: %s" % (entry.path or "")
+        return
+    probe = probe_interpreter(entry.path)
+    if probe is None:
+        entry.available = False
+        entry.reason = "interpreter found but failed to run the driver"
+        return
+    entry.probe = probe
+    entry.implementation = probe.get("implementation", "unknown")
+    entry.freethreaded = bool(probe.get("freethreaded_build"))
+    entry.minor = ".".join(probe.get("version", "").split(".")[:2])
+    entry.available = True
+    entry.reason = None
 
 
 def _find_uv(request: str) -> str | None:
@@ -301,7 +371,10 @@ def describe(entry: Interpreter) -> str:
     if not entry.available:
         return "%-6s unavailable — %s" % (entry.key, entry.reason or "unknown")
     probe = entry.probe
-    bits = [probe.get("version_display") or probe.get("version", "?")]
+    bits = []
+    if entry.implementation not in ("cpython", ""):
+        bits.append(entry.implementation)
+    bits.append(probe.get("version_display") or probe.get("version", "?"))
     if entry.freethreaded:
         gil = probe.get("gil_enabled")
         bits.append("free-threaded, GIL %s" % ("on" if gil else "off"))
