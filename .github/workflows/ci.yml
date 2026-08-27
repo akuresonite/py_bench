@@ -16,8 +16,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.10", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
       - name: Run the test suite
         run: uv run --python ${{ matrix.python }} --with pytest -- python -m pytest tests -q
       - name: Environment report
@@ -31,8 +31,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
       - name: Install a two-version matrix
         run: uv run -- python -m pybench install --minors 3.10,3.13 --no-freethreaded
       - name: Run a short sweep
@@ -41,7 +41,7 @@ jobs:
           --minors 3.10,3.13 --no-freethreaded
           --only call_simple --only exception_raise --only startup_bare
           --min-time-ms 20 --rounds 3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: smoke-${{ matrix.os }}
           path: |
