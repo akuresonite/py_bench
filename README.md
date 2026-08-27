@@ -147,7 +147,7 @@ reporters only read it. Re-render an old sweep at any time with `pybench report`
 ## A worked example
 
 [`examples/raspberry-pi-5.md`](examples/raspberry-pi-5.md) is a full sweep — 55
-benchmarks, nine interpreters, 495 measurements, none degraded — from a Raspberry Pi 5
+benchmarks, ten interpreters, 550 measurements, none degraded — from a Raspberry Pi 5
 (4-core aarch64) with the governor pinned to `performance`. The raw
 [`examples/raspberry-pi-5.json`](examples/raspberry-pi-5.json) is what the reporters
 actually read.
@@ -175,6 +175,38 @@ Three things that sweep showed, which are the sort of thing this tool exists to 
   **0.89x**. Meanwhile the parallel benchmark scales 2.4-2.8x across four threads on
   the free-threaded builds while every GIL build sits at 0.97x — no scaling at all.
   Thread *creation*, though, is roughly 8x more expensive without the GIL.
+
+The same sweep was run twice, independently, hours apart. The geometric means came
+back identical to two decimal places (micro 1.42x, mini 1.45x) — which is the evidence
+that the protocol, not the mood of the machine, is producing these numbers.
+
+### RustPython in the same run
+
+The tenth interpreter was [RustPython](https://github.com/RustPython/RustPython) 0.5.0,
+built from source. It ran **all 55 benchmarks without a single failure**, which is
+worth saying plainly: its standard library covers `asyncio`, `dataclasses`, `pickle`,
+`re`, `copy` and `threading` well enough that nothing had to be skipped.
+
+Geometric mean against CPython 3.10: **0.227x**, so roughly 4.4x slower overall. The
+spread around that average is where it gets interesting:
+
+| Benchmark | CPython 3.10 | RustPython | |
+| --- | --- | --- | --- |
+| `regex_compile` | 99.6 us | 4.95 us | **20.1x faster** |
+| `int_bigint` | 315.4 ns | 798.5 ns | 0.40x |
+| `call_simple` | 126.9 ns | 470.1 ns | 0.27x |
+| `json_dumps` | 26.2 us | 831.0 us | 0.032x |
+| `pickle_roundtrip` | 13.2 us | 3.69 ms | **0.0036x** (278x slower) |
+
+Interpretation matters more than the ranking here. RustPython sits within a small
+factor of CPython on pure interpretation — calls, attributes, arithmetic — and loses
+badly exactly where CPython drops into hand-written C: `pickle`, `json`, `set`
+operations. `regex_compile` inverts because RustPython compiles patterns with a Rust
+regex engine rather than CPython's `sre_compile`.
+
+And it has no GIL, which is not a claim taken on trust: its parallel benchmark scales
+**1.61x** across four threads, while every CPython GIL build in the same run sits at
+0.97x — no scaling whatsoever.
 
 ## Caveats
 
