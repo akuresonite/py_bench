@@ -112,3 +112,34 @@ def test_child_env_fixes_the_hash_seed():
     env = runner._child_env(RunConfig())
     assert env["PYTHONHASHSEED"] == "0"
     assert "PYTHONPATH" not in env
+
+
+def test_installed_python_parsing_survives_paths_with_spaces(monkeypatch):
+    """Windows user directories routinely contain spaces."""
+    import subprocess
+
+    from pybench import interpreters
+
+    listing = (
+        "cpython-3.13.13-windows-x86_64-none    C:\\Users\\John Doe\\uv\\python313\\python.exe\n"
+        "cpython-3.10.20-linux-aarch64-gnu      /home/a b/.local/bin/python3.10 -> /real/python3.10\n"
+        "cpython-3.10.20-linux-aarch64-gnu      /home/a b/uv/python/cpython-3.10/bin/python3.10\n"
+        "cpython-3.14.4+freethreaded-linux-aarch64-gnu  /home/a b/uv/python/3.14t/bin/python3.14t\n"
+        "pypy-7.3-linux-aarch64-gnu             /usr/bin/pypy\n"
+    )
+    monkeypatch.setattr(interpreters, "uv_python_dir", lambda: "/home/a b/uv/python")
+    monkeypatch.setattr(
+        interpreters, "_uv",
+        lambda args, timeout=0: subprocess.CompletedProcess(args, 0, listing, ""),
+    )
+    monkeypatch.setattr(interpreters.os.path, "exists", lambda path: True)
+
+    found = interpreters.installed_pythons()
+    by_path = {item.path: item for item in found}
+    assert "C:\\Users\\John Doe\\uv\\python313\\python.exe" in by_path
+    assert "/home/a b/uv/python/cpython-3.10/bin/python3.10" in by_path
+    assert not any("->" in item.path for item in found), "symlink rows must be skipped"
+    assert not any(item.path == "/usr/bin/pypy" for item in found), "pypy is not cpython"
+    assert by_path["/home/a b/uv/python/3.14t/bin/python3.14t"].freethreaded
+    assert by_path["/home/a b/uv/python/cpython-3.10/bin/python3.10"].managed
+    assert not by_path["C:\\Users\\John Doe\\uv\\python313\\python.exe"].managed

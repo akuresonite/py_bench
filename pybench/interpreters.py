@@ -195,14 +195,15 @@ def installed_pythons() -> list[_Installed]:
     managed_root = uv_python_dir()
     found: list[_Installed] = []
     for line in completed.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
+        # Rows are "<key><padding><path>", optionally "<path> -> <target>". Split
+        # once so that paths containing spaces (common on Windows) survive intact.
+        head = line.split(None, 1)
+        if len(head) < 2:
             continue
-        key, path = parts[0], parts[1]
-        if "->" in line and line.index("->") < len(line):
-            # Symlink rows point at a real row we will also see; skip them.
-            if parts[2:3] == ["->"]:
-                continue
+        key, path = head[0], head[1].strip()
+        if " -> " in path:
+            # A symlink row; the interpreter it points at is listed separately.
+            continue
         if not key.startswith("cpython-"):
             continue
         descriptor = key.split("-", 2)[1] if key.count("-") >= 2 else ""

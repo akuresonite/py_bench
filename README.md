@@ -10,8 +10,12 @@ them, and prints a comparison table.
 ```
 benchmark                    3.10     3.11     3.12     3.13     3.14    3.15*
   micro
-call_simple             126.2 ns    1.32x    1.32x    1.35x    1.65x    1.83x
-exception_raise         297.6 ns    1.22x    1.17x    1.13x    1.24x    1.35x
+attr_access              132.9 ns    1.79x    1.81x    1.71x    2.23x    2.35x
+call_simple              127.1 ns    1.33x    1.33x    1.36x    1.66x    1.84x
+exception_raise          295.0 ns    1.20x    1.13x    1.05x    1.28x    1.34x
+  mini
+deepcopy_tree           108.46 us    1.36x    1.37x    1.40x    2.24x    2.46x
+fib_recursive           239.54 us    1.59x    1.81x    1.94x    1.97x    2.03x
 ```
 
 ## Quickstart
@@ -113,6 +117,38 @@ sudo cpupower frequency-set -g performance
 
 Results are JSON first: `results/sweep-*.json` holds every raw value, and the
 reporters only read it. Re-render an old sweep at any time with `pybench report`.
+
+## A worked example
+
+[`examples/raspberry-pi-5.md`](examples/raspberry-pi-5.md) is a full sweep — 55
+benchmarks, nine interpreters, 495 measurements, none degraded — from a Raspberry Pi 5
+(4-core aarch64) with the governor pinned to `performance`. The raw
+[`examples/raspberry-pi-5.json`](examples/raspberry-pi-5.json) is what the reporters
+actually read.
+
+Geometric mean speedup against 3.10:
+
+| Group | 3.11 | 3.12 | 3.13 | 3.14 | 3.15a8 |
+| --- | --- | --- | --- | --- | --- |
+| startup | 0.99x | 0.96x | 0.88x | 0.86x | **0.87x** |
+| micro | 1.25x | 1.20x | 1.19x | 1.36x | **1.42x** |
+| mini | 1.26x | 1.34x | 1.38x | 1.36x | **1.45x** |
+
+Three things that sweep showed, which are the sort of thing this tool exists to find:
+
+- **Execution got substantially faster; startup got slower.** 3.15a8 runs micro
+  benchmarks 1.42x faster than 3.10 and mini workloads 1.45x faster, but starts up
+  about 13% *slower*. If your workload is short-lived scripts rather than long-running
+  processes, the version ladder is not free.
+- **Progress is not monotonic per benchmark.** `int_arith` and `local_lookup`
+  regressed through 3.12 and 3.13 before 3.14 and 3.15 pulled ahead;
+  `str_startswith` more than doubled at 3.13 and stayed there. A single geometric
+  mean hides both.
+- **Free-threading now costs much less than it did.** Single-threaded geometric mean
+  against each build's own GIL twin: `3.13t` **0.77x**, `3.14t` **0.94x**, `3.15t`
+  **0.89x**. Meanwhile the parallel benchmark scales 2.4-2.8x across four threads on
+  the free-threaded builds while every GIL build sits at 0.97x — no scaling at all.
+  Thread *creation*, though, is roughly 8x more expensive without the GIL.
 
 ## Caveats
 

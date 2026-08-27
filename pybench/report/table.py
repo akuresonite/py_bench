@@ -225,9 +225,10 @@ def _footnotes(sweep: Sweep, paint: Painter, stream) -> None:
         if item.get("available") and item.get("prerelease")
     ]
     if prerelease:
-        lines.append("* %s %s a pre-release; the numbers are provisional."
+        lines.append("* %s %s; the numbers are provisional."
                      % (", ".join(prerelease),
-                        "is" if len(prerelease) == 1 else "are"))
+                        "is a pre-release" if len(prerelease) == 1
+                        else "are pre-releases"))
     degraded = sweep.degraded_count()
     if degraded:
         lines.append("* %d measurement(s) ran in degraded conditions and are marked '*':"

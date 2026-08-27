@@ -241,9 +241,11 @@ def _caveats_section(sweep: Sweep) -> list[str]:
         if item.get("available") and item.get("prerelease")
     ]
     if prerelease:
-        lines.append("- ⚠ %s %s a pre-release build; the numbers are provisional and may "
-                     "change before final release."
-                     % (", ".join(prerelease), "is" if len(prerelease) == 1 else "are"))
+        lines.append("- ⚠ %s %s; the numbers are provisional and may change "
+                     "before final release."
+                     % (", ".join(prerelease),
+                        "is a pre-release build" if len(prerelease) == 1
+                        else "are pre-release builds"))
     if sweep.degraded_count():
         lines.append("- %d measurement(s) ran in degraded conditions and are marked `*`:"
                      % sweep.degraded_count())
