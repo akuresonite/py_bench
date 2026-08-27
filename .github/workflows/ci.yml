@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Run the test suite
+        run: uv run --python ${{ matrix.python }} --with pytest -- python -m pytest tests -q
+      - name: Environment report
+        run: uv run --python ${{ matrix.python }} -- python -m pybench doctor
+
+  smoke:
+    name: smoke sweep (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install a two-version matrix
+        run: uv run -- python -m pybench install --minors 3.10,3.13 --no-freethreaded
+      - name: Run a short sweep
+        run: >
+          uv run -- python -m pybench run
+          --minors 3.10,3.13 --no-freethreaded
+          --only call_simple --only exception_raise --only startup_bare
+          --min-time-ms 20 --rounds 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.os }}
+          path: |
+            results/*.json
+            reports/*.md

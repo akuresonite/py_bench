@@ -8,5 +8,7 @@ venv/
 .DS_Store
 reports/*.md
 !reports/.gitkeep
+results/*.json
+!results/.gitkeep
 .claude-flow/
 .claude/settings.local.json

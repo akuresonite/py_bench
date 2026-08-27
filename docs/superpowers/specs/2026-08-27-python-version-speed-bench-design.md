@@ -56,8 +56,8 @@ pybench/            harness package, runs on the host interpreter
   results.py        results schema, load/save, aggregation
   report/table.py   terminal comparison table
   report/markdown.py  markdown report
-benchmarks/         stdlib-only, 3.10-safe benchmark modules
-  _driver.py        timing driver; runs *inside* each target interpreter
+  benchmarks/       stdlib-only, 3.10-safe benchmark modules, shipped in the package
+    _driver.py      timing driver; runs *inside* each target interpreter
 results/            one JSON file per sweep — the durable artifact
 reports/            generated markdown
 tests/              pytest suite for the harness
